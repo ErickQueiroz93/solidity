@@ -36,10 +36,9 @@ error URIQueryForNonexistentToken();
  *
  * Assumes that the maximum token id cannot exceed 2**256 - 1 (max value of uint256).
  */
-contract ERC721A is Context, ERC165, IERC721 {
+abstract contract ERC721A is Context, ERC165, IERC721 {
     using Address for address;
     using Strings for uint256;
-    mapping(address => uint256[]) public _addressLastMintedTokenIds;
 
     // Compiler will pack this into a single 256bit word.
     struct TokenOwnership {
@@ -82,7 +81,7 @@ contract ERC721A is Context, ERC165, IERC721 {
     mapping(uint256 => TokenOwnership) internal _ownerships;
 
     // Mapping owner address to address data
-    mapping(address => AddressData) internal _addressData;
+    mapping(address => AddressData) private _addressData;
 
     // Mapping from token ID to approved address
     mapping(uint256 => address) private _tokenApprovals;
@@ -229,9 +228,9 @@ contract ERC721A is Context, ERC165, IERC721 {
      */
     function tokenURI(uint256 tokenId, string memory baseExtension) public view virtual returns (string memory) {
         if (!_exists(tokenId)) revert URIQueryForNonexistentToken();
-
         string memory baseURI = _baseURI();
-        return bytes(baseURI).length != 0 ? string(abi.encodePacked(baseURI, tokenId.toString(), baseExtension)) : '';
+        if (_exists(tokenId)) return string(abi.encodePacked(baseURI, Strings.toString(tokenId), baseExtension));
+        return bytes(baseURI).length != 0 ? string(abi.encodePacked(baseURI, Strings.toString(tokenId), baseExtension)) : '';
     }
 
     /**
@@ -246,7 +245,7 @@ contract ERC721A is Context, ERC165, IERC721 {
     /**
      * @dev See {IERC721-approve}.
      */
-    function approve(address to, uint256 tokenId) public override {
+    function approve(address to, uint256 tokenId) public override virtual {
         address owner = ERC721A.ownerOf(tokenId);
         if (to == owner) revert ApprovalToCurrentOwner();
 
@@ -281,43 +280,6 @@ contract ERC721A is Context, ERC165, IERC721 {
      */
     function isApprovedForAll(address owner, address operator) public view virtual override returns (bool) {
         return _operatorApprovals[owner][operator];
-    }
-
-    /**
-     * @dev See {IERC721-transferFrom}.
-     */
-    function transferFrom(
-        address from,
-        address to,
-        uint256 tokenId
-    ) public virtual override {
-        _transfer(from, to, tokenId);
-    }
-
-    /**
-     * @dev See {IERC721-safeTransferFrom}.
-     */
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 tokenId
-    ) public virtual override {
-        safeTransferFrom(from, to, tokenId, '');
-    }
-
-    /**
-     * @dev See {IERC721-safeTransferFrom}.
-     */
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 tokenId,
-        bytes memory _data
-    ) public virtual override {
-        _transfer(from, to, tokenId);
-        if (to.isContract() && !_checkContractOnERC721Received(from, to, tokenId, _data)) {
-            revert TransferToNonERC721ReceiverImplementer();
-        }
     }
 
     /**
@@ -375,8 +337,6 @@ contract ERC721A is Context, ERC165, IERC721 {
 
         _beforeTokenTransfers(address(0), to, startTokenId, quantity);
 
-        delete _addressLastMintedTokenIds[msg.sender];
-
         // Overflows are incredibly unrealistic.
         // balance or numberMinted overflow if current value of either + quantity > 1.8e19 (2**64) - 1
         // updatedIndex overflows if _currentIndex + quantity > 1.2e77 (2**256) - 1
@@ -401,7 +361,6 @@ contract ERC721A is Context, ERC165, IERC721 {
                 if (_currentIndex != startTokenId) revert();
             } else {
                 do {
-                    _addressLastMintedTokenIds[msg.sender].push(updatedIndex);
                     emit Transfer(address(0), to, updatedIndex++);
                 } while (updatedIndex != end);
             }
@@ -424,7 +383,7 @@ contract ERC721A is Context, ERC165, IERC721 {
         address from,
         address to,
         uint256 tokenId
-    ) private {
+    ) public {
         TokenOwnership memory prevOwnership = _ownershipOf(tokenId);
 
         if (prevOwnership.addr != from) revert TransferFromIncorrectOwner();
@@ -570,7 +529,7 @@ contract ERC721A is Context, ERC165, IERC721 {
         address to,
         uint256 tokenId,
         bytes memory _data
-    ) private returns (bool) {
+    ) public returns (bool) {
         try IERC721Receiver(to).onERC721Received(_msgSender(), from, tokenId, _data) returns (bytes4 retval) {
             return retval == IERC721Receiver(to).onERC721Received.selector;
         } catch (bytes memory reason) {
